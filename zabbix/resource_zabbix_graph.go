@@ -5,25 +5,25 @@ import (
 	"log"
 	"strings"
 
-	"github.com/claranet/go-zabbix-api"
+	zabbixapi "github.com/claranet/go-zabbix-api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
 // GraphType defines the graph types
-var GraphType = map[string]zabbix.GraphType{
-	"normal":    zabbix.Normal,
-	"stacked":   zabbix.Stacked,
-	"pie":       zabbix.Pie,
-	"exploded":  zabbix.Exploded,
+var GraphType = map[string]zabbixapi.GraphType{
+	"normal":    zabbixapi.Normal,
+	"stacked":   zabbixapi.Stacked,
+	"pie":       zabbixapi.Pie,
+	"exploded":  zabbixapi.Exploded,
 }
 
 // GraphTypeStringMap is a mapping of numeric graph types to strings
-var GraphTypeStringMap = map[zabbix.GraphType]string{
-	zabbix.Normal:    "normal",
-	zabbix.Stacked:   "stacked",
-	zabbix.Pie:       "pie",
-	zabbix.Exploded:  "exploded",
+var GraphTypeStringMap = map[zabbixapi.GraphType]string{
+	zabbixapi.Normal:    "normal",
+	zabbixapi.Stacked:   "stacked",
+	zabbixapi.Pie:       "pie",
+	zabbixapi.Exploded:  "exploded",
 }
 
 // YAxisSide defines the possible positions of the Y axis
@@ -180,11 +180,11 @@ func resourceZabbixGraph() *schema.Resource {
 }
 
 func resourceZabbixGraphCreate(d *schema.ResourceData, meta interface{}) error {
-	api := meta.(*zabbix.API)
+	api := meta.(*zabbixapi.API)
 
 	graph := buildGraphObject(d)
 
-	graphs := zabbix.Graphs{*graph}
+	graphs := zabbixapi.Graphs{*graph}
 	err := api.GraphsCreate(graphs)
 	if err != nil {
 		return err
@@ -198,11 +198,11 @@ func resourceZabbixGraphCreate(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceZabbixGraphRead(d *schema.ResourceData, meta interface{}) error {
-	api := meta.(*zabbix.API)
+	api := meta.(*zabbixapi.API)
 
 	log.Printf("[DEBUG] Will read graph with ID %s", d.Id())
 
-	graphs, err := api.GraphsGet(zabbix.Params{
+	graphs, err := api.GraphsGet(zabbixapi.Params{
 		"graphids":        d.Id(),
 		"selectGraphItems": "extend",
 	})
@@ -257,12 +257,12 @@ func resourceZabbixGraphRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceZabbixGraphUpdate(d *schema.ResourceData, meta interface{}) error {
-	api := meta.(*zabbix.API)
+	api := meta.(*zabbixapi.API)
 
 	graph := buildGraphObject(d)
 	graph.GraphID = d.Id()
 
-	graphs := zabbix.Graphs{*graph}
+	graphs := zabbixapi.Graphs{*graph}
 	err := api.GraphsUpdate(graphs)
 	if err != nil {
 		return err
@@ -274,7 +274,7 @@ func resourceZabbixGraphUpdate(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceZabbixGraphDelete(d *schema.ResourceData, meta interface{}) error {
-	api := meta.(*zabbix.API)
+	api := meta.(*zabbixapi.API)
 
 	graphIDs := []string{d.Id()}
 	err := api.GraphsDelete(graphIDs)
@@ -289,9 +289,9 @@ func resourceZabbixGraphDelete(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceZabbixGraphExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	api := meta.(*zabbix.API)
+	api := meta.(*zabbixapi.API)
 
-	graphs, err := api.GraphsGet(zabbix.Params{
+	graphs, err := api.GraphsGet(zabbixapi.Params{
 		"graphids": d.Id(),
 	})
 	if err != nil {
@@ -304,8 +304,8 @@ func resourceZabbixGraphExists(d *schema.ResourceData, meta interface{}) (bool, 
 	return len(graphs) > 0, nil
 }
 
-func buildGraphObject(d *schema.ResourceData) *zabbix.Graph {
-	graph := zabbix.Graph{
+func buildGraphObject(d *schema.ResourceData) *zabbixapi.Graph {
+	graph := zabbixapi.Graph{
 		Name:        d.Get("name").(string),
 		Width:       d.Get("width").(int),
 		Height:      d.Get("height").(int),
@@ -314,7 +314,7 @@ func buildGraphObject(d *schema.ResourceData) *zabbix.Graph {
 		PercentLeft: d.Get("percent_left").(string),
 		PercentRight: d.Get("percent_right").(string),
 		Type:        GraphType[d.Get("type").(string)],
-		Show: zabbix.GraphShow{
+		Show: zabbixapi.GraphShow{
 			Legend:           boolToInt(d.Get("show_legend").(bool)),
 			WorkPeriod:       boolToInt(d.Get("show_work_period").(bool)),
 			Triggers:         boolToInt(d.Get("show_triggers").(bool)),
@@ -323,11 +323,11 @@ func buildGraphObject(d *schema.ResourceData) *zabbix.Graph {
 	}
 
 	graphItems := d.Get("graph_items").([]interface{})
-	items := make(zabbix.GraphItems, len(graphItems))
+	items := make(zabbixapi.GraphItems, len(graphItems))
 	
 	for i, v := range graphItems {
 		item := v.(map[string]interface{})
-		items[i] = zabbix.GraphItem{
+		items[i] = zabbixapi.GraphItem{
 			ItemID:       item["item_id"].(string),
 			Color:        item["color"].(string),
 			CalcFunction: item["calc_fnc"].(int),
@@ -342,9 +342,9 @@ func buildGraphObject(d *schema.ResourceData) *zabbix.Graph {
 	return &graph
 }
 
-func getGraphHostID(api *zabbix.API, graphID string) (string, error) {
+func getGraphHostID(api *zabbixapi.API, graphID string) (string, error) {
 	// Get graph items 
-	graphs, err := api.GraphsGet(zabbix.Params{
+	graphs, err := api.GraphsGet(zabbixapi.Params{
 		"graphids":         graphID,
 		"selectGraphItems": []string{"itemid"},
 	})
@@ -358,7 +358,7 @@ func getGraphHostID(api *zabbix.API, graphID string) (string, error) {
 	}
 	
 	// Get first item to determine host ID
-	items, err := api.ItemsGet(zabbix.Params{
+	items, err := api.ItemsGet(zabbixapi.Params{
 		"itemids":     graphs[0].GraphItems[0].ItemID,
 		"selectHosts": []string{"hostid"},
 	})
