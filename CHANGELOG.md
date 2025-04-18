@@ -1,4 +1,10 @@
-## 0.2.0 (October 20, 2020)
+## Unreleased
+
+- **New Feature:** Added support for Zabbix graphs through the new `zabbix_graph` resource, allowing management of graphs from template items
+- **New Feature:** Added support for Zabbix dashboards through the new `zabbix_dashboard` resource, enabling creation and management of dashboards with various widget types
+- **New Example:** Added an example for using the new graph and dashboard resources in `examples/graph_dashboard/`
+
+## 0.3.1 (October 20, 2020)
 
 NOTES:
 
@@ -10,7 +16,7 @@ FEATURES:
 - **Documentation:** Added some documentation ([#10](https://github.com/claranet/terraform-provider-zabbix/pull/10))
 - **License:** License file added by original author
 
-## 0.1.0 (March 27, 2020)
+## 0.3.0 (March 27, 2020)
 
 NOTES:
 
@@ -36,25 +42,25 @@ BUG FIXES:
 
 - Resolve issue when api.Version() is called concurrently to other methods
 
-## 0.0.4 (May 23, 2019)
+## 0.2.7 (May 23, 2019)
 
 NOTES:
 
 - Support terraform 0.12 (upstream release)
 
-## 0.0.3 (May 23, 2019)
+## 0.2.6 (May 23, 2019)
 
 NOTES:
 
 - Support terraform 0.10.x (upstream release)
 
-## 0.0.2 (July 05, 2017)
+## 0.2.5 (July 05, 2017)
 
 NOTES:
 
 - Support terraform 0.9.11 (upstream release)
 
-## 0.0.1 (February 21, 2017)
+## 0.2.4 (February 21, 2017)
 
 NOTES:
 

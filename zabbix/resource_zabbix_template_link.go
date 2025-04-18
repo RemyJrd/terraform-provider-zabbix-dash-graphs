@@ -37,6 +37,19 @@ func resourceZabbixTemplateLink() *schema.Resource {
 				Elem:     schemaTemplatelldRule(),
 				Optional: true,
 			},
+			"graph": &schema.Schema{
+				Type:     schema.TypeSet,
+				Optional: true,
+				ForceNew: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"graph_id": &schema.Schema{
+							Type:     schema.TypeString,
+							Required: true,
+						},
+					},
+				},
+			},
 		},
 	}
 }
@@ -87,31 +100,242 @@ func schemaTemplatelldRule() *schema.Resource {
 }
 
 func resourceZabbixTemplateLinkCreate(d *schema.ResourceData, meta interface{}) error {
-	return resourceZabbixTemplateLinkRead(d, meta)
+	api := meta.(*zabbix.API)
+
+	template_id := d.Get("template_id").(string)
+
+	items, item_set := d.GetOk("item")
+	triggers, trigger_set := d.GetOk("trigger")
+	graphs, graph_set := d.GetOk("graph")
+
+	// First, we get the state of the template (items, triggers and graphs)
+	params := map[string]interface{}{
+		"hostids":          template_id,
+		"preservekeys":     true,
+		"selectItems":      []string{"itemid"},
+		"selectTriggers":   []string{"triggerid"},
+		"selectGraphs":     []string{"graphid"},
+		"output":           []string{"name"},
+		"filter":           map[string]interface{}{},
+		"templated_hosts":  true,
+		"with_items":       true,
+		"with_triggers":    true,
+		"with_graphs":      true,
+		"monitored_hosts":  true,
+		"with_monitored_items": true,
+		"with_monitored_triggers": true,
+		"with_monitored_graphs": true,
+		"with_simple_graph_items": true,
+	}
+
+	templates, err := api.TemplatesGet(params)
+	if err != nil {
+		return err
+	}
+
+	if len(templates) != 1 {
+		return fmt.Errorf("Expected exactly one template with id %s", template_id)
+	}
+
+	template := templates[0]
+	template_items := template.Items
+	template_triggers := template.Triggers
+	template_graphs := template.Graphs
+
+	log.Printf("[DEBUG] Items for template %v : %v", template.Name, template_items)
+
+	// Next, we get the list of items, triggers and graphs to keep:
+	var items_to_keep []zabbix.Item
+	var items_to_keep_id []string
+	var triggers_to_keep []zabbix.Trigger
+	var triggers_to_keep_id []string
+	var graphs_to_keep []zabbix.Graph
+	var graphs_to_keep_id []string
+
+	if item_set {
+		for _, i := range items.(*schema.Set).List() {
+			item_id := i.(map[string]interface{})["item_id"].(string)
+			log.Printf("[DEBUG] item_id: %s", item_id)
+			items_to_keep_id = append(items_to_keep_id, item_id)
+		}
+	}
+
+	if trigger_set {
+		for _, i := range triggers.(*schema.Set).List() {
+			trigger_id := i.(map[string]interface{})["trigger_id"].(string)
+			log.Printf("[DEBUG] trigger_id: %s", trigger_id)
+			triggers_to_keep_id = append(triggers_to_keep_id, trigger_id)
+		}
+	}
+
+	if graph_set {
+		for _, i := range graphs.(*schema.Set).List() {
+			graph_id := i.(map[string]interface{})["graph_id"].(string)
+			log.Printf("[DEBUG] graph_id: %s", graph_id)
+			graphs_to_keep_id = append(graphs_to_keep_id, graph_id)
+		}
+	}
+
+	// Now we identify what to delete
+	var items_to_delete []zabbix.Item
+	var triggers_to_delete []zabbix.Trigger
+	var graphs_to_delete []zabbix.Graph
+
+	for _, template_item := range template_items {
+		found := false
+		for _, item_id := range items_to_keep_id {
+			if item_id == template_item.ItemID {
+				found = true
+				items_to_keep = append(items_to_keep, template_item)
+				break
+			}
+		}
+		if !found {
+			log.Printf("[DEBUG] Item to delete %s", template_item.ItemID)
+			items_to_delete = append(items_to_delete, template_item)
+		} else {
+			log.Printf("[DEBUG] Item to keep %s", template_item.ItemID)
+		}
+	}
+
+	for _, template_trigger := range template_triggers {
+		found := false
+		for _, trigger_id := range triggers_to_keep_id {
+			if trigger_id == template_trigger.TriggerID {
+				found = true
+				triggers_to_keep = append(triggers_to_keep, template_trigger)
+				break
+			}
+		}
+		if !found {
+			log.Printf("[DEBUG] Trigger to delete %s", template_trigger.TriggerID)
+			triggers_to_delete = append(triggers_to_delete, template_trigger)
+		} else {
+			log.Printf("[DEBUG] Trigger to keep %s", template_trigger.TriggerID)
+		}
+	}
+
+	for _, template_graph := range template_graphs {
+		found := false
+		for _, graph_id := range graphs_to_keep_id {
+			if graph_id == template_graph.GraphID {
+				found = true
+				graphs_to_keep = append(graphs_to_keep, template_graph)
+				break
+			}
+		}
+		if !found {
+			log.Printf("[DEBUG] Graph to delete %s", template_graph.GraphID)
+			graphs_to_delete = append(graphs_to_delete, template_graph)
+		} else {
+			log.Printf("[DEBUG] Graph to keep %s", template_graph.GraphID)
+		}
+	}
+
+	// Delete what we have to delete
+	var item_ids_to_delete []string
+	for _, item := range items_to_delete {
+		item_ids_to_delete = append(item_ids_to_delete, item.ItemID)
+	}
+	if len(item_ids_to_delete) > 0 {
+		log.Printf("[DEBUG] Deleting %d items", len(item_ids_to_delete))
+		err = api.ItemsDelete(item_ids_to_delete)
+		if err != nil {
+			return err
+		}
+	}
+
+	var trigger_ids_to_delete []string
+	for _, trigger := range triggers_to_delete {
+		trigger_ids_to_delete = append(trigger_ids_to_delete, trigger.TriggerID)
+	}
+	if len(trigger_ids_to_delete) > 0 {
+		log.Printf("[DEBUG] Expected to delete %d trigger", len(trigger_ids_to_delete))
+		err = api.TriggersDelete(trigger_ids_to_delete)
+		if err != nil {
+			return err
+		}
+	}
+
+	var graph_ids_to_delete []string
+	for _, graph := range graphs_to_delete {
+		graph_ids_to_delete = append(graph_ids_to_delete, graph.GraphID)
+	}
+	if len(graph_ids_to_delete) > 0 {
+		log.Printf("[DEBUG] Expected to delete %d graphs", len(graph_ids_to_delete))
+		err = api.GraphsDelete(graph_ids_to_delete)
+		if err != nil {
+			return err
+		}
+	}
+
+	log.Printf("[DEBUG] Template link created")
+
+	d.SetId(template_id)
+
+	return nil
 }
 
 func resourceZabbixTemplateLinkRead(d *schema.ResourceData, meta interface{}) error {
 	api := meta.(*zabbix.API)
 
-	itemsTerraform, err := getTerraformTemplateItems(d, api)
+	log.Printf("[DEBUG] Reading template link")
+
+	template_id := d.Id()
+
+	params := map[string]interface{}{
+		"output":         "extend",
+		"templateids":    template_id,
+		"selectItems":    []string{"itemid"},
+		"selectTriggers": []string{"triggerid"},
+		"selectGraphs":   []string{"graphid"},
+	}
+
+	template, err := api.TemplatesGet(params)
 	if err != nil {
 		return err
 	}
-	d.Set("item", itemsTerraform)
 
-	triggersTerraform, err := getTerraformTemplateTriggers(d, api)
-	if err != nil {
-		return err
+	if len(template) != 1 {
+		return fmt.Errorf("Expected 1 template and got %d templates", len(template))
 	}
-	d.Set("trigger", triggersTerraform)
 
-	lldRulesTerraform, err := getTerraformTemplateLLDRules(d, api)
-	if err != nil {
-		return err
+	t := template[0]
+
+	// Check if items are set
+	if i, ok := d.GetOk("item"); ok {
+		var newItems []map[string]string
+		for _, u := range i.(*schema.Set).List() {
+			newItems = append(newItems, map[string]string{
+				"item_id": u.(map[string]interface{})["item_id"].(string),
+			})
+		}
+		d.Set("item", newItems)
 	}
-	d.Set("lld_rule", lldRulesTerraform)
 
-	d.SetId(d.Get("template_id").(string))
+	// Check if triggers are set
+	if i, ok := d.GetOk("trigger"); ok {
+		var newTriggers []map[string]string
+		for _, u := range i.(*schema.Set).List() {
+			newTriggers = append(newTriggers, map[string]string{
+				"trigger_id": u.(map[string]interface{})["trigger_id"].(string),
+			})
+		}
+		d.Set("trigger", newTriggers)
+	}
+
+	// Check if graphs are set
+	if i, ok := d.GetOk("graph"); ok {
+		var newGraphs []map[string]string
+		for _, u := range i.(*schema.Set).List() {
+			newGraphs = append(newGraphs, map[string]string{
+				"graph_id": u.(map[string]interface{})["graph_id"].(string),
+			})
+		}
+		d.Set("graph", newGraphs)
+	}
+
+	d.Set("template_id", template_id)
 	return nil
 }
 

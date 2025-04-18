@@ -223,3 +223,76 @@ resource "zabbix_template_link" "demo_template_2_link" {
   template_id = zabbix_template.template_2.id
 }
 ```
+
+### Template with item, trigger, and graph
+
+```hcl
+provider "zabbix" {
+  user = "Admin"
+  password = "zabbix"
+  server_url = "http://localhost/api_jsonrpc.php"
+}
+
+resource "zabbix_host_group" "demo_group" {
+  name = "Template demo group"
+}
+
+resource "zabbix_template" "demo_template" {
+  host        = "template"
+  name        = "template demo"
+  description = "An example of template with item, trigger, and graph"
+  groups      = [zabbix_host_group.demo_group.name]
+  macro = {
+    MACRO_TEMPLATE = "12"
+  }
+}
+
+resource "zabbix_item" "demo_item" {
+  name        = "demo item"
+  key         = "demo.key"
+  delay       = "34"
+  description = "Item for the demo template"
+  trends      = "300"
+  history     = "25"
+  host_id     = zabbix_template.demo_template.template_id
+}
+
+resource "zabbix_trigger" "demo_trigger" {
+  description = "demo trigger"
+  expression  = "{${zabbix_template.demo_template.host}:${zabbix_item.demo_item.key}.last()}={$MACRO_TEMPLATE}"
+  priority    = 5
+  status      = 0
+}
+
+resource "zabbix_graph" "demo_graph" {
+  name    = "Demo Graph"
+  host_id = zabbix_template.demo_template.template_id
+  width   = 800
+  height  = 300
+  
+  graph_items {
+    item_id   = zabbix_item.demo_item.id
+    color     = "00AA00"
+    draw_type = "line"
+  }
+}
+
+# This virtual resource is responsible of ensuring no item, trigger, or graph is directly associated to the template
+resource "zabbix_template_link" "demo_template_link" {
+  template_id = zabbix_template.demo_template.id
+  
+  item {
+    item_id = zabbix_item.demo_item.id
+  }
+  
+  trigger {
+    trigger_id = zabbix_trigger.demo_trigger.id
+  }
+  
+  graph {
+    graph_id = zabbix_graph.demo_graph.id
+  }
+}
+```
+
+```
