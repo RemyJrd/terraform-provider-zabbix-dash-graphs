@@ -7,34 +7,9 @@ import (
 
 	zabbixapi "github.com/claranet/go-zabbix-api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
-// WidgetType defines the widget types for dashboards
-var WidgetType = map[string]int{
-	"graph":          0,
-	"clock":          1,
-	"sysmap":         2,
-	"plain_text":     3,
-	"url":            10,
-	"trigger_info":   4,
-	"trigger_over":   5, 
-	"problems":       9,
-	"problems_by_sv": 8,
-}
-
-// WidgetTypeStringMap is a mapping of numeric widget types to strings
-var WidgetTypeStringMap = map[int]string{
-	0:  "graph",
-	1:  "clock",
-	2:  "sysmap",
-	3:  "plain_text",
-	10: "url",
-	4:  "trigger_info",
-	5:  "trigger_over",
-	9:  "problems",
-	8:  "problems_by_sv",
-}
+// Note: The Dashboard, DashboardPage, DashboardWidget structs are now defined in types.go
 
 // ResourceZabbixDashboard creates the Zabbix dashboard resource
 func resourceZabbixDashboard() *schema.Resource {
@@ -49,89 +24,94 @@ func resourceZabbixDashboard() *schema.Resource {
 		},
 
 		Schema: map[string]*schema.Schema{
-			"name": &schema.Schema{
-				Type:         schema.TypeString,
-				Required:     true,
-				ValidateFunc: validation.StringIsNotEmpty,
+			"name": {
+				Type:     schema.TypeString,
+				Required: true,
 			},
-			"owner_userid": &schema.Schema{
+			"userid": {
 				Type:     schema.TypeString,
 				Optional: true,
 				Computed: true,
+				Description: "User ID of the dashboard owner. Defaults to the current user if not set.",
 			},
-			"page": &schema.Schema{
+			"pages": {
 				Type:     schema.TypeList,
 				Required: true,
+				MinItems: 1,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
-						"name": &schema.Schema{
+						"name": {
 							Type:     schema.TypeString,
 							Required: true,
 						},
-						"display_period": &schema.Schema{
+						"display_period": {
 							Type:     schema.TypeInt,
 							Optional: true,
 							Default:  30,
 						},
-						"widget": &schema.Schema{
-							Type:     schema.TypeList,
+						"sort_order": {
+							Type:     schema.TypeInt,
 							Optional: true,
+							Computed: true,
+						},
+						"widgets": {
+							Type:     schema.TypeList,
+							Required: true,
+							MinItems: 1,
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
-									"type": &schema.Schema{
+									"type": {
 										Type:     schema.TypeString,
 										Required: true,
-										ValidateFunc: validation.StringInSlice(
-											[]string{
-												"graph", "clock", "sysmap", "plain_text", 
-												"url", "trigger_info", "trigger_over", 
-												"problems", "problems_by_sv",
-											}, 
-											false,
-										),
+										Description: "Widget type (e.g., system.clock, item.graph, problems)",
 									},
-									"name": &schema.Schema{
-										Type:     schema.TypeString,
-										Required: true,
-									},
-									"x": &schema.Schema{
-										Type:     schema.TypeInt,
-										Required: true,
-									},
-									"y": &schema.Schema{
-										Type:     schema.TypeInt,
-										Required: true,
-									},
-									"width": &schema.Schema{
-										Type:     schema.TypeInt,
-										Required: true,
-									},
-									"height": &schema.Schema{
-										Type:     schema.TypeInt,
-										Required: true,
-									},
-									"graph_id": &schema.Schema{
+									"name": {
 										Type:     schema.TypeString,
 										Optional: true,
-										ConflictsWith: []string{
-											"page.0.widget.0.url", 
-											"page.0.widget.0.text",
-										},
 									},
-									"url": &schema.Schema{
-										Type:     schema.TypeString,
-										Optional: true,
-										ConflictsWith: []string{
-											"page.0.widget.0.graph_id", 
-											"page.0.widget.0.text",
-										},
+									"x": {
+										Type:     schema.TypeInt,
+										Required: true,
 									},
-									"text": &schema.Schema{
-										Type:     schema.TypeString,
+									"y": {
+										Type:     schema.TypeInt,
+										Required: true,
+									},
+									"width": {
+										Type:     schema.TypeInt,
+										Required: true,
+									},
+									"height": {
+										Type:     schema.TypeInt,
+										Required: true,
+									},
+									"view_mode": {
+										Type:     schema.TypeInt,
 										Optional: true,
-										ConflictsWith: []string{
-											"page.0.widget.0.graph_id", 
-											"page.0.widget.0.url",
+										Default:  0,
+									},
+									"fields": {
+										Type: schema.TypeList,
+										Required: true,
+										Description: "Widget-specific configuration fields",
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"type": {
+													Type: schema.TypeInt,
+													Required: true,
+													Description: "Field type identifier (integer)",
+												},
+												"name": {
+													Type: schema.TypeString,
+													Required: true,
+													Description: "Field name (e.g., 'resourceid', 'graphid')",
+												},
+												"value": {
+													Type: schema.TypeString,
+													Required: true,
+													Description: "Field value (always stored as string in TF state)",
+												},
+											},
 										},
 									},
 								},
@@ -145,241 +125,185 @@ func resourceZabbixDashboard() *schema.Resource {
 }
 
 func resourceZabbixDashboardCreate(d *schema.ResourceData, meta interface{}) error {
-	api := meta.(*zabbixapi.API)
+	api := meta.(*ZabbixGraphAPI)
+	dashboard := buildDashboardObject(d)
 
-	dashboard := buildDashboardObject(d, api)
-
-	dashboards := Dashboards{*dashboard}
-	err := api.DashboardsCreate(dashboards)
+	dashboardsToCreate := Dashboards{*dashboard}
+	err := api.DashboardsCreate(dashboardsToCreate)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error creating Zabbix dashboard %s: %v", dashboard.Name, err)
 	}
 
-	d.SetId(dashboards[0].DashboardID)
+	dashboard.DashboardID = dashboardsToCreate[0].DashboardID
+	d.SetId(dashboard.DashboardID)
 
 	log.Printf("[DEBUG] Created dashboard with ID %s", d.Id())
-
 	return resourceZabbixDashboardRead(d, meta)
 }
 
 func resourceZabbixDashboardRead(d *schema.ResourceData, meta interface{}) error {
-	api := meta.(*zabbixapi.API)
-
-	log.Printf("[DEBUG] Will read dashboard with ID %s", d.Id())
+	api := meta.(*ZabbixGraphAPI)
+	dashboardID := d.Id()
+	log.Printf("[DEBUG] Reading dashboard with ID %s", dashboardID)
 
 	dashboards, err := api.DashboardsGet(zabbixapi.Params{
-		"dashboardids": d.Id(),
-		"selectPages": "extend",
-		"selectUsers": "extend",
-		"selectUserGroups": "extend",
+		"dashboardids": dashboardID,
+		"selectPages":  "extend",
+		"selectWidgets": "extend",
+		"selectFields":  "extend",
 	})
-
 	if err != nil {
-		return err
+		if strings.Contains(err.Error(), "Expected exactly one result") || strings.Contains(err.Error(), "No dashboard found") {
+			log.Printf("[WARN] Zabbix Dashboard (%s) not found, removing from state", dashboardID)
+			d.SetId("")
+			return nil
+		}
+		return fmt.Errorf("Error reading Zabbix dashboard %s: %v", dashboardID, err)
 	}
 
 	if len(dashboards) != 1 {
-		return fmt.Errorf("Expected one dashboard with ID %s and got %d dashboards", d.Id(), len(dashboards))
+		log.Printf("[WARN] Expected one dashboard %s but got %d. Removing from state", dashboardID, len(dashboards))
+		d.SetId("")
+		return nil
 	}
-
 	dashboard := dashboards[0]
 
-	log.Printf("[DEBUG] Dashboard name is %s", dashboard.Name)
-
 	d.Set("name", dashboard.Name)
-	d.Set("owner_userid", dashboard.UserID)
+	d.Set("userid", dashboard.UserID)
 
-	// Handle dashboard pages
-	pages := make([]map[string]interface{}, len(dashboard.Pages))
+	pages := make([]interface{}, len(dashboard.Pages))
 	for i, page := range dashboard.Pages {
-		pageMap := map[string]interface{}{
+		widgets := make([]interface{}, len(page.Widgets))
+		for j, widget := range page.Widgets {
+			fields := make([]interface{}, len(widget.Fields))
+			for k, field := range widget.Fields {
+				fields[k] = map[string]interface{}{
+					"type":  field.Type,
+					"name":  field.Name,
+					"value": fmt.Sprintf("%v", field.Value),
+				}
+			}
+			widgets[j] = map[string]interface{}{
+				"type":      widget.Type,
+				"name":      widget.Name,
+				"x":         widget.X,
+				"y":         widget.Y,
+				"width":     widget.Width,
+				"height":    widget.Height,
+				"view_mode": widget.ViewMode,
+				"fields":    fields,
+			}
+		}
+		pages[i] = map[string]interface{}{
 			"name":           page.Name,
 			"display_period": page.DisplayPeriod,
+			"sort_order":     page.SortOrder,
+			"widgets":        widgets,
 		}
-
-		// Get widgets for this page
-		widgets := page.Widgets
-		widgetsList := make([]map[string]interface{}, len(widgets))
-		for j, widget := range widgets {
-			widgetMap := map[string]interface{}{
-				"type":   WidgetTypeStringMap[widget.Type],
-				"name":   widget.Name,
-				"x":      widget.X,
-				"y":      widget.Y,
-				"width":  widget.Width,
-				"height": widget.Height,
-			}
-
-			// Handle different widget types and their fields
-			switch widget.Type {
-			case WidgetType["graph"]:
-				if resourceID, ok := widget.Fields.GetResourceID(); ok {
-					widgetMap["graph_id"] = resourceID
-				}
-			case WidgetType["plain_text"]:
-				if text, ok := widget.Fields.GetText(); ok {
-					widgetMap["text"] = text
-				}
-			case WidgetType["url"]:
-				if url, ok := widget.Fields.GetURL(); ok {
-					widgetMap["url"] = url
-				}
-			}
-
-			widgetsList[j] = widgetMap
-		}
-
-		pageMap["widget"] = widgetsList
-		pages[i] = pageMap
 	}
-
-	d.Set("page", pages)
+	if err := d.Set("pages", pages); err != nil {
+		return fmt.Errorf("error setting pages for dashboard %s: %v", dashboardID, err)
+	}
 
 	return nil
 }
 
 func resourceZabbixDashboardUpdate(d *schema.ResourceData, meta interface{}) error {
-	api := meta.(*zabbixapi.API)
+	api := meta.(*ZabbixGraphAPI)
+	dashboardID := d.Id()
 
-	dashboard := buildDashboardObject(d, api)
-	dashboard.DashboardID = d.Id()
+	dashboard := buildDashboardObject(d)
+	dashboard.DashboardID = dashboardID
 
-	dashboards := Dashboards{*dashboard}
-	err := api.DashboardsUpdate(dashboards)
+	dashboardsToUpdate := Dashboards{*dashboard}
+	err := api.DashboardsUpdate(dashboardsToUpdate)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error updating Zabbix dashboard %s: %v", dashboardID, err)
 	}
-
-	log.Printf("[DEBUG] Updated dashboard with ID %s", d.Id())
-
+	log.Printf("[DEBUG] Updated dashboard with ID %s", dashboardID)
 	return resourceZabbixDashboardRead(d, meta)
 }
 
 func resourceZabbixDashboardDelete(d *schema.ResourceData, meta interface{}) error {
-	api := meta.(*zabbixapi.API)
+	api := meta.(*ZabbixGraphAPI)
+	dashboardID := d.Id()
 
-	dashboardIDs := []string{d.Id()}
-	err := api.DashboardsDelete(dashboardIDs)
+	err := api.DashboardsDelete([]string{dashboardID})
 	if err != nil {
-		return err
+		if strings.Contains(err.Error(), "No dashboard found") || strings.Contains(err.Error(), "does not exist") {
+			log.Printf("[WARN] Zabbix Dashboard (%s) already deleted, removing from state", dashboardID)
+			d.SetId("")
+			return nil
+		}
+		return fmt.Errorf("Error deleting Zabbix dashboard %s: %v", dashboardID, err)
 	}
-
-	log.Printf("[DEBUG] Deleted dashboard with ID %s", d.Id())
-
+	log.Printf("[DEBUG] Deleted dashboard with ID %s", dashboardID)
 	d.SetId("")
 	return nil
 }
 
 func resourceZabbixDashboardExists(d *schema.ResourceData, meta interface{}) (bool, error) {
-	api := meta.(*zabbixapi.API)
+	api := meta.(*ZabbixGraphAPI)
+	dashboardID := d.Id()
 
-	dashboards, err := api.DashboardsGet(zabbixapi.Params{
-		"dashboardids": d.Id(),
+	_, err := api.DashboardsGet(zabbixapi.Params{
+		"dashboardids": dashboardID,
+		"output":       "dashboardid",
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "Expected exactly one result") {
-			log.Printf("[DEBUG] Dashboard with ID %s doesn't exist", d.Id())
+		if strings.Contains(err.Error(), "Expected exactly one result") || strings.Contains(err.Error(), "No dashboard found") {
+			log.Printf("[DEBUG] Dashboard %s doesn't exist", dashboardID)
 			return false, nil
 		}
-		return false, err
+		return false, fmt.Errorf("Error checking existence of dashboard %s: %v", dashboardID, err)
 	}
-	return len(dashboards) > 0, nil
+	return true, nil
 }
 
-func buildDashboardObject(d *schema.ResourceData, api *zabbixapi.API) *Dashboard {
-	dashboard := Dashboard{
-		Name: d.Get("name").(string),
+func buildDashboardObject(d *schema.ResourceData) *Dashboard {
+	dashboard := &Dashboard{
+		Name:   d.Get("name").(string),
+		UserID: d.Get("userid").(string),
 	}
 
-	// Set owner user ID if provided
-	if userID, ok := d.GetOk("owner_userid"); ok {
-		dashboard.UserID = userID.(string)
-	} else {
-		// Default to the current API user
-		users, err := api.UsersGet(zabbixapi.Params{
-			"output": []string{"userid"},
-			"filter": map[string]interface{}{
-				"alias": api.User(),
-			},
-		})
-		if err == nil && len(users) > 0 {
-			dashboard.UserID = users[0].UserID
-		}
-	}
-
-	// Build pages
-	pages := d.Get("page").([]interface{})
-	dashboardPages := make(DashboardPages, len(pages))
-
-	for i, p := range pages {
-		page := p.(map[string]interface{})
-		
-		dashboardPage := DashboardPage{
-			Name:          page["name"].(string),
-			DisplayPeriod: page["display_period"].(int),
-		}
-
-		// Process widgets
-		if widgets, ok := page["widget"].([]interface{}); ok && len(widgets) > 0 {
-			dashboardWidgets := make(DashboardWidgets, len(widgets))
-			
-			for j, w := range widgets {
-				widget := w.(map[string]interface{})
-				
-				dashboardWidget := DashboardWidget{
-					Type:   WidgetType[widget["type"].(string)],
-					Name:   widget["name"].(string),
-					X:      widget["x"].(int),
-					Y:      widget["y"].(int),
-					Width:  widget["width"].(int),
-					Height: widget["height"].(int),
-					Fields: DashboardWidgetFields{},
-				}
-
-				// Set fields based on widget type
-				switch dashboardWidget.Type {
-				case WidgetType["graph"]:
-					if graphID, ok := widget["graph_id"].(string); ok && graphID != "" {
-						dashboardWidget.Fields = append(dashboardWidget.Fields, 
-							DashboardWidgetField{
-								Type:  0, // resourceid
-								Name:  "graphid",
-								Value: graphID,
-							},
-						)
-					}
-				case WidgetType["plain_text"]:
-					if text, ok := widget["text"].(string); ok && text != "" {
-						dashboardWidget.Fields = append(dashboardWidget.Fields, 
-							DashboardWidgetField{
-								Type:  1, // string
-								Name:  "text",
-								Value: text,
-							},
-						)
-					}
-				case WidgetType["url"]:
-					if url, ok := widget["url"].(string); ok && url != "" {
-						dashboardWidget.Fields = append(dashboardWidget.Fields, 
-							DashboardWidgetField{
-								Type:  1, // string
-								Name:  "url",
-								Value: url,
-							},
-						)
+	if v, ok := d.GetOk("pages"); ok {
+		pagesRaw := v.([]interface{})
+		dashboard.Pages = make([]DashboardPage, len(pagesRaw))
+		for i, pageRaw := range pagesRaw {
+			pageMap := pageRaw.(map[string]interface{})
+			widgetsRaw := pageMap["widgets"].([]interface{})
+			widgets := make([]DashboardWidget, len(widgetsRaw))
+			for j, widgetRaw := range widgetsRaw {
+				widgetMap := widgetRaw.(map[string]interface{})
+				fieldsRaw := widgetMap["fields"].([]interface{})
+				fields := make([]DashboardWidgetField, len(fieldsRaw))
+				for k, fieldRaw := range fieldsRaw {
+					fieldMap := fieldRaw.(map[string]interface{})
+					fields[k] = DashboardWidgetField{
+						Type:  fieldMap["type"].(int),
+						Name:  fieldMap["name"].(string),
+						Value: fieldMap["value"].(string),
 					}
 				}
-
-				dashboardWidgets[j] = dashboardWidget
+				widgets[j] = DashboardWidget{
+					Type:     widgetMap["type"].(string),
+					Name:     widgetMap["name"].(string),
+					X:        widgetMap["x"].(int),
+					Y:        widgetMap["y"].(int),
+					Width:    widgetMap["width"].(int),
+					Height:   widgetMap["height"].(int),
+					ViewMode: widgetMap["view_mode"].(int),
+					Fields:   fields,
+				}
 			}
-			
-			dashboardPage.Widgets = dashboardWidgets
+			dashboard.Pages[i] = DashboardPage{
+				Name:          pageMap["name"].(string),
+				DisplayPeriod: pageMap["display_period"].(int),
+				SortOrder:     pageMap["sort_order"].(int),
+				Widgets:       widgets,
+			}
 		}
-		
-		dashboardPages[i] = dashboardPage
 	}
 
-	dashboard.Pages = dashboardPages
-
-	return &dashboard
-}
+	return dashboard
+} 

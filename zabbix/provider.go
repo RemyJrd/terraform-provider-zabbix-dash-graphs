@@ -84,7 +84,8 @@ func providerConfigure(d *schema.ResourceData, terraformVersion string) (interfa
 		return nil, err
 	}
 
-	return api, nil
+	// Return our wrapper that includes the API client
+	return &ZabbixGraphAPI{API: api}, nil
 }
 
 func getZabbixServerVersion(meta interface{}) string {

@@ -1,6 +1,8 @@
 package zabbix
 
 import (
+	"encoding/json"
+	"fmt"
 	zabbixapi "github.com/claranet/go-zabbix-api"
 )
 
@@ -14,6 +16,58 @@ const (
 	Exploded
 )
 
+// YAxisSideVal defines the Y axis position type
+type YAxisSideVal int
+
+const (
+	Left YAxisSideVal = iota
+	Right
+)
+
+// DrawTypeVal defines the graph item draw type
+type DrawTypeVal int
+
+const (
+	Line DrawTypeVal = iota
+	FilledRegion
+	BoldLine
+	Dot
+	DashedLine
+	GradientLine
+)
+
+// YAxisSide defines the possible positions of the Y axis
+var YAxisSide = map[string]int{
+	"left":  0,
+	"right": 1,
+}
+
+// YAxisSideStringMap is a mapping of numeric Y axis positions to strings
+var YAxisSideStringMap = map[int]string{
+	0: "left",
+	1: "right",
+}
+
+// DrawType defines the graph item draw types
+var DrawType = map[string]int{
+	"line":          0,
+	"filled_region": 1,
+	"bold_line":     2,
+	"dot":           3,
+	"dashed_line":   4,
+	"gradient_line": 5,
+}
+
+// DrawTypeStringMap is a mapping of numeric draw types to strings
+var DrawTypeStringMap = map[int]string{
+	0: "line",
+	1: "filled_region",
+	2: "bold_line",
+	3: "dot",
+	4: "dashed_line",
+	5: "gradient_line",
+}
+
 // Graph represents a Zabbix graph
 type Graph struct {
 	GraphID      string           `json:"graphid"`
@@ -25,7 +79,7 @@ type Graph struct {
 	PercentLeft  string           `json:"percent_left"`
 	PercentRight string           `json:"percent_right"`
 	Show         GraphShow        `json:"show"`
-	Type         GraphType        `json:"graphtype,string"`
+	Type         int              `json:"graphtype,string"`
 	GraphItems   GraphItems       `json:"gitems"`
 	Hosts        []zabbixapi.Host `json:"hosts"`
 	ParentHosts  []zabbixapi.Host `json:"hosts"`
@@ -41,185 +95,216 @@ type GraphShow struct {
 type GraphItem struct {
 	ItemID       string `json:"itemid"`
 	Color        string `json:"color"`
-	Type         int    `json:"type,string"`
-	YAxisSide    int    `json:"yaxisside,string"`
-	CalcFunction int    `json:"calc_fnc,string"`
-	DrawType     int    `json:"drawtype,string"`
+	Type         string `json:"type,string"`
+	YAxisSide    string `json:"yaxisside,string"`
+	CalcFnc      string `json:"calc_fnc,string"`
+	DrawType     string `json:"drawtype,string"`
 }
 
 type GraphItems []GraphItem
 type Graphs []Graph
 
-// Dashboard represents a Zabbix dashboard
+// ZabbixGraphAPI is a wrapper around the Zabbix API that provides additional functionality
+type ZabbixGraphAPI struct {
+	API *zabbixapi.API
+}
+
+// GraphsGet retrieves Zabbix graphs based on the provided parameters
+func (z *ZabbixGraphAPI) GraphsGet(params zabbixapi.Params) (Graphs, error) {
+	resp, err := z.API.CallWithError("graph.get", params)
+	if err != nil {
+		return nil, err
+	}
+
+	graphs := make(Graphs, 0)
+	resultBytes, err := json.Marshal(resp.Result)
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(resultBytes, &graphs)
+	return graphs, err
+}
+
+// GraphsCreate creates new graphs and populates their IDs
+func (z *ZabbixGraphAPI) GraphsCreate(graphs Graphs) error {
+	resp, err := z.API.CallWithError("graph.create", graphs)
+	if err != nil {
+		return err
+	}
+
+	// Extract the created graph IDs from the response
+	result, ok := resp.Result.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("unexpected format for graph.create result")
+	}
+	graphIDsRaw, ok := result["graphids"].([]interface{})
+	if !ok {
+		return fmt.Errorf("could not find 'graphids' in graph.create result")
+	}
+
+	if len(graphIDsRaw) != len(graphs) {
+		return fmt.Errorf("number of created graph IDs (%d) does not match input graphs (%d)", len(graphIDsRaw), len(graphs))
+	}
+
+	for i, idRaw := range graphIDsRaw {
+		id, ok := idRaw.(string)
+		if !ok {
+			return fmt.Errorf("graph ID at index %d is not a string", i)
+		}
+		graphs[i].GraphID = id
+	}
+	return nil
+}
+
+// GraphsUpdate updates existing graphs
+func (z *ZabbixGraphAPI) GraphsUpdate(graphs Graphs) error {
+	_, err := z.API.CallWithError("graph.update", graphs)
+	return err
+}
+
+// GraphsDelete deletes Zabbix graphs by their IDs
+func (z *ZabbixGraphAPI) GraphsDelete(ids []string) error {
+	_, err := z.API.CallWithError("graph.delete", ids)
+	return err
+}
+
+// ZabbixItem represents a Zabbix item with additional fields not in the API's Item struct
+type ZabbixItem struct {
+	ItemID      string           `json:"itemid"`
+	Name        string           `json:"name"`
+	Description string           `json:"description"`
+	Key         string           `json:"key_"`
+	HostID      string           `json:"hostid"`
+	Hosts       []zabbixapi.Host `json:"hosts"`
+}
+
+// ItemsGet retrieves Zabbix items based on the provided parameters
+func (z *ZabbixGraphAPI) ItemsGet(params zabbixapi.Params) ([]ZabbixItem, error) {
+	resp, err := z.API.CallWithError("item.get", params)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]ZabbixItem, 0)
+	resultBytes, err := json.Marshal(resp.Result)
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(resultBytes, &items)
+	return items, err
+}
+
+// ZabbixTemplate represents a Zabbix template with additional fields
+type ZabbixTemplate struct {
+	TemplateID string `json:"templateid"`
+	Name       string `json:"name"`
+	Items      []interface{} `json:"items"`
+	Triggers   []interface{} `json:"triggers"`
+	Graphs     []interface{} `json:"graphs"`
+}
+
+// TemplatesGet retrieves Zabbix templates based on the provided parameters
+func (z *ZabbixGraphAPI) TemplatesGet(params zabbixapi.Params) ([]ZabbixTemplate, error) {
+	resp, err := z.API.CallWithError("template.get", params)
+	if err != nil {
+		return nil, err
+	}
+
+	templates := make([]ZabbixTemplate, 0)
+	resultBytes, err := json.Marshal(resp.Result)
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(resultBytes, &templates)
+	return templates, err
+}
+
+// --- Dashboard API Methods --- 
+// Note: These assume the underlying Zabbix API supports these calls.
+// If not, the CallWithError will likely fail.
+
+// Dashboard represents a Zabbix dashboard (structure might need adjustment based on actual API)
 type Dashboard struct {
-	DashboardID string         `json:"dashboardid"`
-	Name        string         `json:"name"`
-	UserID      string         `json:"userid"`
-	Pages       DashboardPages `json:"pages"`
-	Users       interface{}    `json:"users"`
-	UserGroups  interface{}    `json:"usergroups"`
+	DashboardID string `json:"dashboardid,omitempty"`
+	Name        string `json:"name"`
+	UserID      string `json:"userid,omitempty"` // Assuming dashboards are user-specific
+	Pages       []DashboardPage `json:"pages"`
 }
 
 type DashboardPage struct {
-	PageID        string           `json:"pageid"`
-	Name          string           `json:"name"`
-	DisplayPeriod int              `json:"display_period,string"`
-	Widgets       DashboardWidgets `json:"widgets"`
+	DashboardPageID string `json:"dashboard_pageid,omitempty"`
+	Name            string `json:"name"`
+	DisplayPeriod   int    `json:"display_period,omitempty"`
+	SortOrder       int    `json:"sort_order,omitempty"`
+	Widgets         []DashboardWidget `json:"widgets"`
 }
 
 type DashboardWidget struct {
-	WidgetID string                `json:"widgetid"`
-	Type     int                   `json:"type,string"`
-	Name     string                `json:"name"`
-	X        int                   `json:"x,string"`
-	Y        int                   `json:"y,string"`
-	Width    int                   `json:"width,string"`
-	Height   int                   `json:"height,string"`
-	Fields   DashboardWidgetFields `json:"fields"`
+	WidgetID string `json:"widgetid,omitempty"`
+	Type     string `json:"type"`
+	Name     string `json:"name,omitempty"` // Name might be optional depending on widget type
+	X        int    `json:"x,string"`
+	Y        int    `json:"y,string"`
+	Width    int    `json:"width,string"`
+	Height   int    `json:"height,string"`
+	ViewMode int    `json:"view_mode,omitempty"`
+	Fields   []DashboardWidgetField `json:"fields"`
 }
 
+// DashboardWidgetField represents dynamic fields within a widget
+// Structure highly depends on the widget type
 type DashboardWidgetField struct {
-	Type  int    `json:"type,string"`
+	Type  int    `json:"type"`
 	Name  string `json:"name"`
-	Value string `json:"value"`
+	Value interface{} `json:"value"`
 }
 
-type DashboardWidgetFields []DashboardWidgetField
-
-// GetResourceID gets the resource ID from widget fields (for graphs, etc.)
-func (f DashboardWidgetFields) GetResourceID() (string, bool) {
-	for _, field := range f {
-		if field.Type == 0 && field.Name == "graphid" {
-			return field.Value, true
-		}
-	}
-	return "", false
-}
-
-// GetText gets text from widget fields
-func (f DashboardWidgetFields) GetText() (string, bool) {
-	for _, field := range f {
-		if field.Type == 1 && field.Name == "text" {
-			return field.Value, true
-		}
-	}
-	return "", false
-}
-
-// GetURL gets URL from widget fields
-func (f DashboardWidgetFields) GetURL() (string, bool) {
-	for _, field := range f {
-		if field.Type == 1 && field.Name == "url" {
-			return field.Value, true
-		}
-	}
-	return "", false
-}
-
-type DashboardWidgets []DashboardWidget
-type DashboardPages []DashboardPage
 type Dashboards []Dashboard
 
-// GraphsGet gets information about graphs
-func (api *zabbixapi.API) GraphsGet(params zabbixapi.Params) (Graphs, error) {
-	var result Graphs
-	response, err := api.CallWithError("graph.get", params)
+// DashboardsGet retrieves Zabbix dashboards
+func (z *ZabbixGraphAPI) DashboardsGet(params zabbixapi.Params) (Dashboards, error) {
+	resp, err := z.API.CallWithError("dashboard.get", params)
 	if err != nil {
 		return nil, err
 	}
-
-	if err := api.ConvertResponse(response.Result, &result); err != nil {
-		return nil, err
-	}
-
-	return result, nil
-}
-
-// GraphsCreate creates new graphs
-func (api *zabbixapi.API) GraphsCreate(graphs Graphs) error {
-	response, err := api.CallWithError("graph.create", graphs)
-	if err != nil {
-		return err
-	}
-
-	result := response.Result.(map[string]interface{})
-	graphids := result["graphids"].([]interface{})
-
-	for i, id := range graphids {
-		graphs[i].GraphID = id.(string)
-	}
-
-	return nil
-}
-
-// GraphsUpdate updates graphs
-func (api *zabbixapi.API) GraphsUpdate(graphs Graphs) error {
-	response, err := api.CallWithError("graph.update", graphs)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// GraphsDelete deletes graphs
-func (api *zabbixapi.API) GraphsDelete(ids []string) error {
-	response, err := api.CallWithError("graph.delete", ids)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// DashboardsGet gets information about dashboards
-func (api *zabbixapi.API) DashboardsGet(params zabbixapi.Params) (Dashboards, error) {
-	var result Dashboards
-	response, err := api.CallWithError("dashboard.get", params)
+	dashboards := make(Dashboards, 0)
+	resultBytes, err := json.Marshal(resp.Result)
 	if err != nil {
 		return nil, err
 	}
-
-	if err := api.ConvertResponse(response.Result, &result); err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	err = json.Unmarshal(resultBytes, &dashboards)
+	return dashboards, err
 }
 
 // DashboardsCreate creates new dashboards
-func (api *zabbixapi.API) DashboardsCreate(dashboards Dashboards) error {
-	response, err := api.CallWithError("dashboard.create", dashboards)
+func (z *ZabbixGraphAPI) DashboardsCreate(dashboards Dashboards) error {
+	resp, err := z.API.CallWithError("dashboard.create", dashboards)
 	if err != nil {
 		return err
 	}
-
-	result := response.Result.(map[string]interface{})
-	dashboardids := result["dashboardids"].([]interface{})
-
-	for i, id := range dashboardids {
-		dashboards[i].DashboardID = id.(string)
+	
+	// Extract IDs similar to GraphsCreate
+	result, ok := resp.Result.(map[string]interface{})
+	if !ok { return fmt.Errorf("unexpected format for dashboard.create result") }
+	dashboardIDsRaw, ok := result["dashboardids"].([]interface{})
+	if !ok { return fmt.Errorf("could not find 'dashboardids' in dashboard.create result") }
+	if len(dashboardIDsRaw) != len(dashboards) { return fmt.Errorf("ID count mismatch") }
+	for i, idRaw := range dashboardIDsRaw {
+		id, ok := idRaw.(string)
+		if !ok { return fmt.Errorf("dashboard ID %d not string", i) }
+		dashboards[i].DashboardID = id
 	}
-
 	return nil
 }
 
-// DashboardsUpdate updates dashboards
-func (api *zabbixapi.API) DashboardsUpdate(dashboards Dashboards) error {
-	response, err := api.CallWithError("dashboard.update", dashboards)
-	if err != nil {
-		return err
-	}
-
-	return nil
+// DashboardsUpdate updates existing dashboards
+func (z *ZabbixGraphAPI) DashboardsUpdate(dashboards Dashboards) error {
+	_, err := z.API.CallWithError("dashboard.update", dashboards)
+	return err
 }
 
-// DashboardsDelete deletes dashboards
-func (api *zabbixapi.API) DashboardsDelete(ids []string) error {
-	response, err := api.CallWithError("dashboard.delete", ids)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
+// DashboardsDelete deletes Zabbix dashboards by their IDs
+func (z *ZabbixGraphAPI) DashboardsDelete(ids []string) error {
+	_, err := z.API.CallWithError("dashboard.delete", ids)
+	return err
+} 
