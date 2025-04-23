@@ -1,3 +1,18 @@
+## 1.1.4 (April 23, 2025)
+
+FEATURES:
+
+*   **New Resource:** `zabbix_dashboard` (with acceptance tests)
+*   **New Resource:** `zabbix_graph` (with acceptance tests)
+
+BUG FIXES:
+
+*   Fix `zabbix_dashboard` resource creation when `pages` argument is omitted (ensures a default page is created as required by Zabbix API).
+*   Fix `zabbix_graph` resource handling of `calc_fnc` values returned as strings by certain Zabbix API versions.
+*   Fix `zabbix_template` resource update behavior when removing all user macros.
+
+---
+
 ## 0.2.0 (October 20, 2020)
 
 NOTES:

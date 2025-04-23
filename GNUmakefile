@@ -1,6 +1,6 @@
 # Variables
 NAME := zabbix-dash-graphs
-VERSION := 0.1.0
+VERSION := 1.1.4
 DIST := dist
 PKG := ./zabbix
 PLUGIN_DIR := ~/.terraform.d/plugins
