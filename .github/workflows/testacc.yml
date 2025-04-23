@@ -1,8 +1,8 @@
 name: Acceptance Tests with Zabbix
 
 on:
-  push:
-    branches: [master]
+  release:
+    types: [published]
 
 
 jobs:
