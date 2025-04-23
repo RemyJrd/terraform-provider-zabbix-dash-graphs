@@ -1,4 +1,4 @@
-module github.com/claranet/terraform-provider-zabbix
+module github.com/RemyJrd/terraform-provider-zabbix-dash-graphs
 
 go 1.21
 
