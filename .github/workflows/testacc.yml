@@ -33,12 +33,6 @@ jobs:
             sleep 5
           done
 
-      - name: check logs
-        run: |
-          cd ci
-          docker-compose logs -f zabbix-server
-
-
       
       - name: Wait for Zabbix API to be available
         run: |
