@@ -33,6 +33,9 @@ jobs:
             sleep 5
           done
 
+      - name: Docker health
+        run: |
+          docker ps
       
       - name: Wait for Zabbix API to be available
         run: |
