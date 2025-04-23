@@ -32,6 +32,30 @@ jobs:
             curl -sf http://localhost:8080 && break
             sleep 5
           done
+      
+      - name: Wait for Zabbix API to be available
+        run: |
+          echo "Waiting for Zabbix API (auth)..."
+          for i in {1..60}; do
+            RESPONSE=$(curl -s -X POST http://localhost:8080/api_jsonrpc.php \
+              -H 'Content-Type: application/json' \
+              -d '{
+                    "jsonrpc": "2.0",
+                    "method": "user.login",
+                    "params": {
+                      "user": "Admin",
+                      "password": "zabbix"
+                    },
+                    "id": 1,
+                    "auth": null
+                  }')
+            if echo "$RESPONSE" | grep -q '"result"'; then
+              echo "Zabbix API ready"
+              break
+            fi
+            echo "Still waiting..."
+            sleep 5
+          done
 
       - name: Run Go acceptance tests
         env:
