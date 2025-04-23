@@ -1,6 +1,6 @@
 # Variables
 NAME := zabbix-dash-graphs
-VERSION := 1.1.4
+VERSION := 1.1.5
 DIST := dist
 PKG := ./zabbix
 PLUGIN_DIR := ~/.terraform.d/plugins
@@ -20,11 +20,13 @@ build:
 	@for target in $(OS_ARCHES); do \
 		OS=$${target%_*}; ARCH=$${target#*_}; \
 		BIN=terraform-provider-$(NAME)_v$(VERSION); \
-		GOOS=$$OS GOARCH=$$ARCH go build -o $(DIST)/$$BIN ./; \
-		zip -j -q $(DIST)/$$BIN"_"$$OS"_"$$ARCH.zip $(DIST)/$$BIN; \
+		ZIP=terraform-provider-$(NAME)_$(VERSION)_$$OS\_$$ARCH.zip; \
+		echo "Building for $$OS/$$ARCH..."; \
+		CGO_ENABLED=0 GOOS=$$OS GOARCH=$$ARCH go build -o $(DIST)/$$BIN ./; \
+		zip -j -q $(DIST)/$$ZIP $(DIST)/$$BIN; \
 		rm $(DIST)/$$BIN; \
-		echo "Built: $$BIN"_"$$OS"_"$$ARCH.zip"; \
-	done
+		echo "Built: $(DIST)/$$ZIP"; \
+	done	
 
 
 install:
