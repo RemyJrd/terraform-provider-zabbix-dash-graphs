@@ -12,6 +12,8 @@ services:
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_bin
+      - --log-bin-trust-function-creators=1
+
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
