@@ -1,0 +1,47 @@
+name: Acceptance Tests with Zabbix
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  testacc:
+    runs-on: ubuntu-latest
+    services:
+      zabbix:
+        image: zabbix/zabbix-appliance:alpine-6.0-latest
+        ports:
+          - 8080:8080
+        options: >-
+          --health-cmd="curl -f http://localhost:8080 || exit 1"
+          --health-interval=15s
+          --health-timeout=10s
+          --health-retries=10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.22
+
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y unzip make curl
+
+      - name: Wait for Zabbix to be up
+        run: |
+          echo "Waiting for Zabbix to become healthy..."
+          for i in {1..60}; do
+            curl -sf http://localhost:8080 && break
+            sleep 5
+          done
+
+      - name: Run acceptance tests
+        env:
+          ZABBIX_SERVER_URL: http://localhost:8080/api_jsonrpc.php
+          ZABBIX_USER: Admin
+          ZABBIX_PASSWORD: zabbix
+          TF_ACC: 1
+        run: make testacc
