@@ -32,6 +32,12 @@ jobs:
             curl -sf http://localhost:8080 && break
             sleep 5
           done
+
+      - name: check logs
+        run: |
+          docker-compose logs -f zabbix-server
+
+
       
       - name: Wait for Zabbix API to be available
         run: |
